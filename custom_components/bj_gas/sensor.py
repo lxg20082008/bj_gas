@@ -7,7 +7,12 @@ from homeassistant.const import (
     UnitOfElectricPotential,
 )
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+import logging
+
+from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 GAS_SENSORS = {
     "balance": {
@@ -67,6 +72,19 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
         for day in range(len(data["daily_bills"])):
             sensors.append(GASDailyBillSensor(coordinator, user_code, day))
     async_add_devices(sensors, True)
+    # 规范化 entity_id：HA 默认按中文名生成拼音 ID，这里统一改成 sensor.gas_户号_字段
+    # 仅对新注册实体生效；目标被其他实体占用时跳过，避免 recorder 迁移竞态
+    registry = er.async_get(hass)
+    for sensor in sensors:
+        if sensor.entity_id and sensor.unique_id:
+            expected = f"sensor.{sensor.unique_id}"
+            if sensor.entity_id == expected:
+                continue
+            occupied = registry.async_get(expected)
+            if occupied is not None and occupied.unique_id != sensor.unique_id:
+                _LOGGER.warning("entity_id %s 已被占用，跳过规范化", expected)
+                continue
+            registry.async_update_entity(sensor.entity_id, new_entity_id=expected)
 
 
 class GASBaseSensor(CoordinatorEntity, SensorEntity):
