@@ -1,11 +1,11 @@
 {
   "domain": "bj_gas",
   "name": "北京燃气信息查询",
-  "version": "v0.0.1",
-  "documentation": "https://github.com/zhaoyibo/bj_gas",
-  "issue_tracker": "https://github.com/zhaoyibo/bj_gas/issues",
+  "version": "v1.0.0",
+  "documentation": "https://github.com/lxg20082008/bj_gas",
+  "issue_tracker": "https://github.com/lxg20082008/bj_gas/issues",
   "iot_class": "cloud_polling",
   "requirements": [],
   "dependencies": [],
-  "codeowners": ["@zhaoyibo"]
+  "codeowners": ["@lxg20082008"]
 }

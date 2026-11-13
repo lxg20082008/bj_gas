@@ -140,14 +140,18 @@ class GASData:
             raise InvalidData(f"async_get_userinfo error: {body}")
 
         data = body["rows"][0]
-        return {
+        result = {
             "last_update": data["fiscalDate"],
             "balance": float(data["remainAmt"]),
             "battery_voltage": float(data["batteryVoltage"]),
             "current_price": float(data["gasPrice"]),
-            "month_reg_qty": float(data["regQty"]),
             "mtr_status": data["mtrStatus"],
         }
+        # 实测部分表型接口不返回 regQty（当月用气）字段，缺失时跳过该传感器
+        reg_qty = data.get("regQty")
+        if reg_qty:
+            result["month_reg_qty"] = float(reg_qty)
+        return result
 
     @_with_login_retry
     async def get_week(self, user_code):

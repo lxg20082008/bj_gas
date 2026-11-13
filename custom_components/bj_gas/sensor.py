@@ -1,11 +1,12 @@
+# -*- coding: utf-8 -*-
+"""北京燃气传感器实体定义（适配 HA 2026.7）。"""
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.const import (
-    DEVICE_CLASS_GAS,
-    VOLUME_CUBIC_METERS,
-    ELECTRIC_POTENTIAL_VOLT,
-    STATE_UNKNOWN
+    STATE_UNKNOWN,
+    UnitOfVolume,
+    UnitOfElectricPotential,
 )
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from .const import DOMAIN
 
 GAS_SENSORS = {
@@ -13,7 +14,7 @@ GAS_SENSORS = {
         "name": "燃气费余额",
         "icon": "hass:cash-100",
         "unit_of_measurement": "元",
-        "attributes": ["last_update"]
+        "attributes": ["last_update"],
     },
     "current_level": {
         "name": "当前燃气阶梯",
@@ -26,31 +27,30 @@ GAS_SENSORS = {
     },
     "current_level_remain": {
         "name": "当前阶梯剩余额度",
-        "device_class": DEVICE_CLASS_GAS,
-        "unit_of_measurement": VOLUME_CUBIC_METERS,
+        "device_class": SensorDeviceClass.GAS,
+        "unit_of_measurement": UnitOfVolume.CUBIC_METERS,
     },
     "year_consume": {
         "name": "本年度用气量",
-        "device_class": DEVICE_CLASS_GAS,
-        "state_class": SensorStateClass.TOTAL_INCREASING,
-        "unit_of_measurement": VOLUME_CUBIC_METERS,
+        "device_class": SensorDeviceClass.GAS,
+        "state_class": SensorStateClass.TOTAL,
+        "unit_of_measurement": UnitOfVolume.CUBIC_METERS,
     },
     "month_reg_qty": {
         "name": "当月用气量",
-        "device_class": DEVICE_CLASS_GAS,
-        "state_class": SensorStateClass.TOTAL_INCREASING,
-        "unit_of_measurement": VOLUME_CUBIC_METERS,
+        "device_class": SensorDeviceClass.GAS,
+        "state_class": SensorStateClass.TOTAL,
+        "unit_of_measurement": UnitOfVolume.CUBIC_METERS,
     },
     "battery_voltage": {
-        "name": "气表电量",
-        "device_class": DEVICE_CLASS_GAS,
-        "unit_of_measurement": ELECTRIC_POTENTIAL_VOLT,
+        "name": "气表电池电压",
+        "device_class": SensorDeviceClass.VOLTAGE,
+        "unit_of_measurement": UnitOfElectricPotential.VOLT,
     },
     "mtr_status": {
         "name": "阀门状态",
-        "device_class": DEVICE_CLASS_GAS,
-        "unit_of_measurement": "",
-    }
+        # 阀门状态是文本（开阀/关阀），不设数值型 device_class
+    },
 }
 
 
@@ -59,7 +59,8 @@ async def async_setup_platform(hass, config, async_add_devices, discovery_info=N
     coordinator = hass.data[DOMAIN]
     for user_code, data in coordinator.data.items():
         for key in GAS_SENSORS.keys():
-            if key in data.keys():
+            # 值为 None 的字段（如接口缺失的当月用气量）不创建实体
+            if key in data.keys() and data[key] is not None:
                 sensors.append(GASSensor(coordinator, user_code, key))
         for month in range(len(data["monthly_bills"])):
             sensors.append(GASHistorySensor(coordinator, user_code, month))
@@ -82,6 +83,14 @@ class GASBaseSensor(CoordinatorEntity, SensorEntity):
         return False
 
 
+def _safe_float(value):
+    """安全转浮点，失败返回 STATE_UNKNOWN。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return STATE_UNKNOWN
+
+
 class GASSensor(GASBaseSensor):
     def __init__(self, coordinator, user_code, sensor_key):
         super().__init__(coordinator)
@@ -95,9 +104,10 @@ class GASSensor(GASBaseSensor):
 
     def get_value(self, attribute=None):
         try:
+            data = self._coordinator.data.get(self._user_code) or {}
             if attribute is None:
-                return self._coordinator.data.get(self._user_code).get(self._sensor_key)
-            return self._coordinator.data.get(self._user_code).get(attribute)
+                return data.get(self._sensor_key)
+            return data.get(attribute)
         except KeyError:
             return STATE_UNKNOWN
 
@@ -107,7 +117,11 @@ class GASSensor(GASBaseSensor):
 
     @property
     def state(self):
-        return self.get_value()
+        value = self.get_value()
+        # 数值型字段统一转 float，避免字符串状态
+        if self._config.get("device_class") and value is not STATE_UNKNOWN:
+            return _safe_float(value)
+        return value
 
     @property
     def icon(self):
@@ -146,37 +160,41 @@ class GASHistorySensor(GASBaseSensor):
         self._unique_id = f"{DOMAIN}.gas_{user_code}_monthly_{index + 1}"
         self.entity_id = self._unique_id
 
+    def _bill(self):
+        """安全获取当前索引的月度账单条目。"""
+        try:
+            return self._coordinator.data.get(self._user_code).get("monthly_bills")[self._index]
+        except (KeyError, IndexError, TypeError, AttributeError):
+            return None
+
     @property
     def name(self):
-        try:
-            return '燃气消耗 ' + self._coordinator.data.get(self._user_code).get("monthly_bills")[self._index].get("mon")
-        except KeyError:
-            return STATE_UNKNOWN
+        bill = self._bill()
+        if bill:
+            return "燃气消耗 " + str(bill.get("mon") or "")
+        return STATE_UNKNOWN
 
     @property
     def state(self):
-        try:
-            return self._coordinator.data.get(self._user_code).get("monthly_bills")[self._index].get("regQty")
-        except KeyError:
-            return STATE_UNKNOWN
+        bill = self._bill()
+        if bill:
+            return _safe_float(bill.get("regQty"))
+        return STATE_UNKNOWN
 
     @property
     def extra_state_attributes(self):
-        try:
-            return {
-                "consume_bill": self._coordinator.data.get(self._user_code).get("monthly_bills")[self._index].get(
-                    "amt")
-            }
-        except KeyError:
-            return {"consume_bill": 0.0}
+        bill = self._bill()
+        if bill:
+            return {"consume_bill": _safe_float(bill.get("amt"))}
+        return {}
 
     @property
     def device_class(self):
-        return DEVICE_CLASS_GAS
+        return SensorDeviceClass.GAS
 
     @property
     def unit_of_measurement(self):
-        return VOLUME_CUBIC_METERS
+        return UnitOfVolume.CUBIC_METERS
 
 
 class GASDailyBillSensor(GASBaseSensor):
@@ -188,24 +206,31 @@ class GASDailyBillSensor(GASBaseSensor):
         self._unique_id = f"{DOMAIN}.gas_{user_code}_daily_{index + 1}"
         self.entity_id = self._unique_id
 
+    def _bill(self):
+        """安全获取当前索引的每日账单条目。"""
+        try:
+            return self._coordinator.data.get(self._user_code).get("daily_bills")[self._index]
+        except (KeyError, IndexError, TypeError, AttributeError):
+            return None
+
     @property
     def name(self):
-        try:
-            return '燃气消耗 ' + self._coordinator.data.get(self._user_code).get("daily_bills")[self._index].get("day")[:10]
-        except KeyError:
-            return STATE_UNKNOWN
+        bill = self._bill()
+        if bill:
+            return "燃气消耗 " + str(bill.get("day") or "")[:10]
+        return STATE_UNKNOWN
 
     @property
     def state(self):
-        try:
-            return self._coordinator.data.get(self._user_code).get("daily_bills")[self._index].get("regQty")
-        except KeyError:
-            return STATE_UNKNOWN
+        bill = self._bill()
+        if bill:
+            return _safe_float(bill.get("regQty"))
+        return STATE_UNKNOWN
 
     @property
     def device_class(self):
-        return DEVICE_CLASS_GAS
+        return SensorDeviceClass.GAS
 
     @property
     def unit_of_measurement(self):
-        return VOLUME_CUBIC_METERS
+        return UnitOfVolume.CUBIC_METERS
