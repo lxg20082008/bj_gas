@@ -6,7 +6,7 @@ from homeassistant.const import (
     UnitOfVolume,
     UnitOfElectricPotential,
 )
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from .const import DOMAIN
 
 GAS_SENSORS = {
@@ -99,8 +99,7 @@ class GASSensor(GASBaseSensor):
         self._config = GAS_SENSORS[self._sensor_key]
         self._attributes = self._config.get("attributes")
         self._coordinator = coordinator
-        self._unique_id = f"{DOMAIN}.gas_{user_code}_{sensor_key}"
-        self.entity_id = self._unique_id
+        self._unique_id = f"gas_{user_code}_{sensor_key}"
 
     def get_value(self, attribute=None):
         try:
@@ -157,8 +156,7 @@ class GASHistorySensor(GASBaseSensor):
         self._user_code = user_code
         self._coordinator = coordinator
         self._index = index
-        self._unique_id = f"{DOMAIN}.gas_{user_code}_monthly_{index + 1}"
-        self.entity_id = self._unique_id
+        self._unique_id = f"gas_{user_code}_monthly_{index + 1}"
 
     def _bill(self):
         """安全获取当前索引的月度账单条目。"""
@@ -203,8 +201,7 @@ class GASDailyBillSensor(GASBaseSensor):
         self._user_code = user_code
         self._coordinator = coordinator
         self._index = index
-        self._unique_id = f"{DOMAIN}.gas_{user_code}_daily_{index + 1}"
-        self.entity_id = self._unique_id
+        self._unique_id = f"gas_{user_code}_daily_{index + 1}"
 
     def _bill(self):
         """安全获取当前索引的每日账单条目。"""
